@@ -1,0 +1,1366 @@
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# rossko и parterra
+[string] $RosskoDomain = "OU=Rossko.local,DC=rossko,DC=local"
+# Blacklight
+[string] $BlacklightDomain = "OU=Сотрудники,OU=Blacklight,DC=rossko,DC=local"
+# fitauto
+[string] $fitautoDomain = "OU=_УК,OU=fitauto.ru_users,DC=rossko,DC=local"
+
+[string] $dc = (Get-ADDomainController -Discover -ForceDiscover -NextClosestSite).hostname
+
+$CacheTitle = ".\TitleList.csv"
+$HardcodedDomains = @("rossko", "parterra", "blacklight-it", "fitauto")
+
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.Application]::EnableVisualStyles()
+
+#region
+$Form = New-Object system.Windows.Forms.Form
+$Form.Text = 'Менеджер учетных записей 3.0'
+$Form.Width = 1250 #640
+#$Form.Height = 150
+$Form.Location = New-Object System.Drawing.Size(400,900)
+$Form.MinimumSize = New-Object system.drawing.size(760, 655)
+
+$LblTicket = New-Object system.Windows.Forms.Label
+$LblTicket.Text = "Номер заявки:"
+$LblTicket.AutoSize = $true
+$LblTicket.Location = New-Object System.Drawing.Point(15,20)
+$LblTicket.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblTicket)
+
+$TxtTicket = New-Object system.Windows.Forms.TextBox
+$TxtTicket.Multiline = $false
+$TxtTicket.Text = ""
+$TxtTicket.Width = 100
+$TxtTicket.Height = 20
+$TxtTicket.Location = New-Object System.Drawing.Point(15,40)
+$TxtTicket.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$TxtTicket.Add_TextChanged({IncorrectInput})
+$Form.Controls.Add($TxtTicket)
+
+$LblLastName = New-Object system.Windows.Forms.Label
+$LblLastName.Text = "Фамилия:"
+$LblLastName.AutoSize = $true
+$LblLastName.Location = New-Object System.Drawing.Point(15,70)
+$LblLastName.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblLastName)
+
+$TxtLastName = New-Object system.Windows.Forms.TextBox
+$TxtLastName.Multiline = $false
+$TxtLastName.Text = ""
+$TxtLastName.Width = 120
+$TxtLastName.Height = 20
+$TxtLastName.Location = New-Object System.Drawing.Point(15,90)
+$TxtLastName.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$TxtLastName.Add_TextChanged({IncorrectInput})
+$TxtLastName.Add_KeyPress({
+    if ([char]::IsWhiteSpace($_.KeyChar) -or [char]::IsDigit($_.KeyChar) -or [char]::IsPunctuation($_.KeyChar) -or [char]::IsSymbol($_.KeyChar)) {
+        $_.Handled = $true
+    }
+})
+$TxtLastName.Add_TextChanged({
+    FullName $_
+})
+$Form.Controls.Add($TxtLastName)
+
+$LblFirstName = New-Object system.Windows.Forms.Label
+$LblFirstName.Text = "Имя:"
+$LblFirstName.AutoSize = $true
+$LblFirstName.Location = New-Object System.Drawing.Point(140,70)
+$LblFirstName.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblFirstName)
+
+$TxtFirstName = New-Object system.Windows.Forms.TextBox
+$TxtFirstName.Multiline = $false
+$TxtFirstName.Text = ""
+$TxtFirstName.Width = 120
+$TxtFirstName.Height = 20
+$TxtFirstName.Location = New-Object System.Drawing.Point(140,90)
+$TxtFirstName.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$TxtFirstName.Add_TextChanged({IncorrectInput})
+$TxtFirstName.Add_KeyPress({
+    if ([char]::IsWhiteSpace($_.KeyChar) -or [char]::IsDigit($_.KeyChar) -or [char]::IsPunctuation($_.KeyChar) -or [char]::IsSymbol($_.KeyChar)) {
+        $_.Handled = $true
+    }
+})
+$TxtFirstName.Add_TextChanged({
+    FullName $_
+})
+$Form.Controls.Add($TxtFirstName)
+
+$LblMiddleName = New-Object system.Windows.Forms.Label
+$LblMiddleName.Text = "Отчество:"
+$LblMiddleName.AutoSize = $true
+$LblMiddleName.Location = New-Object System.Drawing.Point(265,70)
+$LblMiddleName.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblMiddleName)
+
+$TxtMiddleName = New-Object system.Windows.Forms.TextBox
+$TxtMiddleName.Multiline = $false
+$TxtMiddleName.Text = ""
+$TxtMiddleName.Width = 120
+$TxtMiddleName.Height = 20
+$TxtMiddleName.Location = New-Object System.Drawing.Point(265,90)
+$TxtMiddleName.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$TxtMiddleName.Add_TextChanged({IncorrectInput})
+$TxtMiddleName.Add_KeyPress({
+    if ([char]::IsWhiteSpace($_.KeyChar) -or [char]::IsDigit($_.KeyChar) -or [char]::IsPunctuation($_.KeyChar) -or [char]::IsSymbol($_.KeyChar)) {
+        $_.Handled = $true
+    }
+})
+$TxtMiddleName.Add_TextChanged({
+    FullName $_
+})
+$Form.Controls.Add($TxtMiddleName)
+
+$LblFullName = New-Object System.Windows.Forms.Label
+$LblFullName.Text = "Полное имя:"
+$LblFullName.Location = New-Object System.Drawing.Point(15,120)
+$LblFullName.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblFullName)
+
+$TxtFullName = New-Object System.Windows.Forms.TextBox
+$TxtFullName.Text = ""
+$TxtFullName.ReadOnly = $true
+$TxtFullName.Width = 370
+$TxtFullName.Height = 10
+$TxtFullName.Location = New-Object System.Drawing.Point(15,143)
+$TxtFullName.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$Form.Controls.Add($TxtFullName)
+$TxtFullName.Add_TextChanged({ConvertNameToADSamAccountName})
+
+$LblPass = New-Object system.Windows.Forms.Label
+$LblPass.Text = "Пароль:"
+$LblPass.AutoSize = $true
+$LblPass.Location = New-Object System.Drawing.Point(140,170)
+$LblPass.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblPass)
+
+$TxtPass = New-Object System.Windows.Forms.TextBox
+$TxtPass.Text = ""
+$TxtPass.ReadOnly = $true
+$TxtPass.Width = 120
+$TxtPass.Height = 10
+$TxtPass.Location = New-Object System.Drawing.Point(140,190)
+$TxtPass.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$Form.Controls.Add($TxtPass)
+
+$LblDomain = New-Object system.Windows.Forms.Label
+$LblDomain.Text = "Домен:"
+$LblDomain.AutoSize = $true
+$LblDomain.Location = New-Object System.Drawing.Point(295,170)
+$LblDomain.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblDomain)
+
+$CmbDomain = New-Object system.Windows.Forms.ComboBox
+$CmbDomain.Text = ""
+$CmbDomain.Width = 90
+$CmbDomain.Height = 20
+$CmbDomain.Location = New-Object System.Drawing.Point(295,189)
+$CmbDomain.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$Form.Controls.Add($CmbDomain)
+
+$LblMail = New-Object system.Windows.Forms.Label
+$LblMail.Text = "Почта:"
+$LblMail.AutoSize = $true
+$LblMail.Location = New-Object System.Drawing.Point(140,220)
+$LblMail.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblMail)
+
+$TxtMail = New-Object System.Windows.Forms.TextBox
+$TxtMail.Text = ""
+$TxtMail.ReadOnly = $true
+$TxtMail.Width = 225
+$TxtMail.Height = 10
+$TxtMail.Location = New-Object System.Drawing.Point(140,240)
+$TxtMail.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$Form.Controls.Add($TxtMail)
+
+$CkbEmail = New-Object System.Windows.Forms.CheckBox
+$CkbEmail.Text = ""
+$CkbEmail.AutoSize = $true
+$CkbEmail.Location = New-Object System.Drawing.Point(370,245)
+$CkbEmail.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($CkbEmail)
+$CkbEmail.Add_CheckedChanged({
+    AutoFillEmail
+})
+
+$LblLogin = New-Object system.Windows.Forms.Label
+$LblLogin.Text = "Логин:"
+$LblLogin.AutoSize = $true
+$LblLogin.Location = New-Object System.Drawing.Point(15,170)
+$LblLogin.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblLogin)
+
+$TxtLogin = New-Object System.Windows.Forms.TextBox
+$TxtLogin.Text = ""
+$TxtLogin.ReadOnly = $true
+$TxtLogin.Width = 120
+$TxtLogin.Height = 10
+$TxtLogin.Location = New-Object System.Drawing.Point(15,190)
+$TxtLogin.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$TxtLogin.Add_Enter({ $TxtLogin.ReadOnly = $false })
+$TxtLogin.Add_Leave({ $TxtLogin.ReadOnly = $true })
+$TxtLogin.Add_TextChanged({IncorrectInput})
+$Form.Controls.Add($TxtLogin)
+
+$LblPhone = New-Object system.Windows.Forms.Label
+$LblPhone.Text = "Телефон:"
+$LblPhone.AutoSize = $true
+$LblPhone.Location = New-Object System.Drawing.Point(15,220)
+$LblPhone.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblPhone)
+
+$TxtPhone = New-Object system.Windows.Forms.TextBox
+$TxtPhone.Multiline = $false
+$TxtPhone.Text = ""
+$TxtPhone.Width = 95
+$TxtPhone.Height = 20
+$TxtPhone.MaxLength = 10
+$TxtPhone.Location = New-Object System.Drawing.Point(38,240)
+$TxtPhone.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$TxtPhone.Add_TextChanged({IncorrectInput})
+$Form.Controls.Add($TxtPhone)
+
+$LblPhone7 = New-Object system.Windows.Forms.Label
+$LblPhone7.Text = "+7"
+$LblPhone7.AutoSize = $true
+$LblPhone7.Location = New-Object System.Drawing.Point(15,240)
+$LblPhone7.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',11)
+$Form.Controls.Add($LblPhone7)
+
+# OU в AD 
+$LblOU = New-Object system.Windows.Forms.Label
+$LblOU.Text = "OU"
+$LblOU.AutoSize = $true
+$LblOU.Location = New-Object System.Drawing.Point(15,270)
+$LblOU.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblOU)
+
+$CmbOU = New-Object system.Windows.Forms.ComboBox
+$CmbOU.Text = ""
+$CmbOU.Width = 282
+$CmbOU.Height = 20
+$CmbOU.Location = New-Object System.Drawing.Point(15,290)
+$CmbOU.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$Form.Controls.Add($CmbOU)
+
+# Локация сотрудника
+$LblCity = New-Object system.Windows.Forms.Label
+$LblCity.Text = "Локация сотрудника (город)"
+$LblCity.AutoSize = $true
+$LblCity.Location = New-Object System.Drawing.Point(305,270)
+$LblCity.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+# Активация будет при выборе blacklight или fitauto
+
+$CmbCity = New-Object system.Windows.Forms.ComboBox
+$CmbCity.Text = ""
+$CmbCity.Width = 160
+$CmbCity.Height = 20
+$CmbCity.Location = New-Object System.Drawing.Point(305,290)
+$CmbCity.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+# Активация будет при выборе blacklight или fitauto
+
+# Отдел (для Партерры)
+$LblDepartment = New-Object system.Windows.Forms.Label
+$LblDepartment.Text = "Отдел"
+$LblDepartment.AutoSize = $true
+$LblDepartment.Location = New-Object System.Drawing.Point(305,320)
+$LblDepartment.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+# Активация будет при выборе parterra
+
+$TxtDepartment = New-Object system.Windows.Forms.TextBox
+$TxtDepartment.Text = ""
+$TxtDepartment.Width = 160
+$TxtDepartment.Height = 20
+$TxtDepartment.Location = New-Object System.Drawing.Point(305,340)
+$TxtDepartment.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$TxtDepartment.Add_TextChanged({IncorrectInput})
+# Активация будет при выборе parterra
+
+$LblTitle = New-Object system.Windows.Forms.Label
+$LblTitle.Text = "Должность"
+$LblTitle.AutoSize = $true
+$LblTitle.Location = New-Object System.Drawing.Point(15,320)
+$LblTitle.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+$Form.Controls.Add($LblTitle)
+
+$CmbTitle = New-Object system.Windows.Forms.ComboBox
+$CmbTitle.Text = ""
+$CmbTitle.Width = 282
+$CmbTitle.Height = 20
+$CmbTitle.Location = New-Object System.Drawing.Point(15,340)
+$CmbTitle.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$Form.Controls.Add($CmbTitle)
+
+$BtnUpdatePass = New-Object system.Windows.Forms.Button
+$BtnUpdatePass.Text = [char]0x21BB
+$BtnUpdatePass.Width = 25
+$BtnUpdatePass.Height = 25
+$BtnUpdatePass.Location = New-Object System.Drawing.Point(263,189)
+$BtnUpdatePass.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$Form.Controls.Add($BtnUpdatePass)
+
+$BtnCreate = New-Object system.Windows.Forms.Button
+$BtnCreate.Text = "Создать"
+$BtnCreate.Width = 166
+$BtnCreate.Height = 30
+$BtnCreate.Location = New-Object System.Drawing.Point(15,380)
+$BtnCreate.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$BtnCreate.Enabled = $false
+$Form.Controls.Add($BtnCreate)
+
+$BtnClose = New-Object system.Windows.Forms.Button
+$BtnClose.Text = "Закрыть"
+$BtnClose.Width = 166
+$BtnClose.Height = 30
+$BtnClose.Location = New-Object System.Drawing.Point(185,380)
+$BtnClose.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$Form.Controls.Add($BtnClose)
+
+$BtnClear = New-Object system.Windows.Forms.Button
+$BtnClear.Text = "Очистить"
+$BtnClear.Width = 166
+$BtnClear.Height = 30
+$BtnClear.Location = New-Object System.Drawing.Point(355,380)
+$BtnClear.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',10)
+$Form.Controls.Add($BtnClear)
+
+$lblVerboseOutput = New-Object system.Windows.Forms.Label
+$lblVerboseOutput.Text = 'Подробности:'
+$lblVerboseOutput.AutoSize = $true
+$lblVerboseOutput.Location = New-Object System.Drawing.Point(15,425)
+$lblVerboseOutput.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
+#$lblVerboseOutput.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
+$Form.Controls.Add($lblVerboseOutput)
+
+$lstVerboseOutput = New-Object System.Windows.Forms.TextBox
+$lstVerboseOutput.Location = New-Object System.Drawing.Size(15, 450)
+$lstVerboseOutput.Size = New-Object System.Drawing.Size(715, 150)
+$lstVerboseOutput.Multiline = $true
+$lstVerboseOutput.ScrollBars = "Vertical"
+$lstVerboseOutput.ReadOnly = $true
+$lstVerboseOutput.WordWrap = $true
+$lstVerboseOutput.Font = New-Object System.Drawing.Font("Arial",10)
+$lstVerboseOutput.Text = ""
+$form.Controls.Add($lstVerboseOutput)
+
+$GroupBox = New-Object System.Windows.Forms.GroupBox
+$GroupBox.Text = "Группы доступа"
+$GroupBox.AutoSize = $true
+$GroupBox.Location  = New-Object System.Drawing.Point(750,20)
+$GroupBox.Size = New-Object System.Drawing.Size(450, 545)  # Определяем размер GroupBox
+
+# Создаем Panel для полосы прокрутки
+$Panel = New-Object System.Windows.Forms.Panel
+$Panel.Location = New-Object System.Drawing.Point(10, 20)
+$Panel.Size = New-Object System.Drawing.Size(450, 545)  # Задаем размер панели чуть меньше GroupBox
+$Panel.AutoScroll = $true  # Включаем автопрокрутку
+$GroupBox.Controls.Add($Panel)  # Добавляем панель в GroupBox
+# Создаем CheckBox элементы и добавляем их в Panel
+$y = 0  # Начальная позиция по оси Y
+$checkBoxes = @(
+    @{ Text = 'password_policy'; Checked = $true },
+    @{ Text = 'Confluence Users'; Checked = $true },
+    @{ Text = 'VPN'; Checked = $true },
+    @{ Text = 'Политика - Автоматическая настройка рабочего места Росско'; Checked = $true },
+    @{ Text = 'Пользователи MSTSC Терминальные фермы'; Checked = $true },
+    @{ Text = 'tf.rossko.ru 1С. Фронт'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1С. Фронт ОТЧЁТЫ'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1С. ERP'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1С. Отчёты ERP'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1С. АСУП2'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1С. Претензии поставщикам'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1С. Претензионная работа с клиентами'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1С. Бизнес юнит Партерра'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. ЗУП Казахстан'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. ЗУП Росско'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1С. ТМС'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1С. Управление складом Акита'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Барнаул'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Владивосток'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Екатеринбург'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Екатеринбург Промышленный'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Иркутск'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Казань'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Краснодар'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Красноярск'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Лайт'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Нижний Новгород'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Новосибирск'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Омск'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Пермь'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Подольск'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Ростов-на-Дону'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом РЦ Краснодар'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом РЦ Новосибирск Пасечная'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом РЦ Самара'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Санкт-Петербург'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Сургут'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Томск'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Тюмень'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Хабаровск'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1C. Управление складом Хабаровск-2'; Checked = $false },
+    @{ Text = 'tf.rossko.ru 1С. Управление складом Челябинск'; Checked = $false }
+)
+foreach ($checkbox in $checkBoxes) {
+    $cb = New-Object System.Windows.Forms.CheckBox
+    $cb.Text = $checkbox.Text
+    $cb.AutoSize = $true
+    $cb.Checked = $checkbox.Checked
+    $cb.Location = New-Object System.Drawing.Point(5, $y)
+    $Panel.Controls.Add($cb)
+    $y += 20  # Смещаем по оси Y для следующего элемента
+}
+$Form.Controls.Add($GroupBox)
+#endregion
+
+$HardcodedDomains | ForEach-Object { [void]$CmbDomain.Items.Add($_) }
+$CmbDomain.SelectedIndex = -1
+
+# Привязываем функцию активации кнопки Создать к событиям TextChanged каждого поля ввода и выпадающего списка.
+# Обработчики событий для текстовых полей
+$TxtTicket.Add_TextChanged({ EnableCreateButton })
+$TxtLastName.Add_TextChanged({ EnableCreateButton })
+$TxtFirstName.Add_TextChanged({ EnableCreateButton })
+$TxtMiddleName.Add_TextChanged({ EnableCreateButton })
+$TxtPass.Add_TextChanged({ EnableCreateButton })
+$TxtLogin.Add_TextChanged({ EnableCreateButton })
+$TxtMail.Add_TextChanged({ EnableCreateButton })
+$TxtPhone.Add_TextChanged({ EnableCreateButton })
+$TxtDepartment.Add_TextChanged({ EnableCreateButton })
+
+# Обработчики событий для комбинированных списков
+$CmbTitle.Add_SelectedIndexChanged({ EnableCreateButton })
+$CmbOU.Add_SelectedIndexChanged({ EnableCreateButton })
+$CmbCity.Add_SelectedIndexChanged({ EnableCreateButton })
+$CmbDomain.Add_SelectedIndexChanged({ EnableCreateButton })
+# Привязываем функцию к событию изменения выбранного элемента в CmbDomain - при смене rossko, parterra, fitauto... меняется и выбор OU, в которую можно сохранить учетку и домен для почты 
+$CmbDomain.Add_SelectedIndexChanged({
+    ActivationOrganizationalUnit
+    UpdateCkbEmail
+})
+
+# Функция для активации или деактивации кнопки "Создать"
+function EnableCreateButton {
+    $isButtonEnabled = $true
+
+    # Проверка всех условий
+    if ($lstVerboseOutput.Text -ne "" -or
+        -not $TxtTicket.Text -or
+        -not $TxtLastName.Text -or
+        -not $TxtFirstName.Text -or
+        -not $TxtMiddleName.Text -or
+        -not $TxtLogin.Text -or
+        -not $TxtPass.Text -or
+        ($TxtPhone.Text -and -not ($TxtPhone.Text -match '^\d{10}$')) -or
+        ($CmbDomain.SelectedIndex -eq -1) -or
+        ($CmbTitle.SelectedIndex -eq -1) -or
+        ($CmbOU.SelectedIndex -eq -1)) {
+        $isButtonEnabled = $false
+    }
+
+    # Проверка для города
+    if (($CmbDomain.SelectedItem -eq "blacklight-it" -or $CmbDomain.SelectedItem -eq "fitauto") -and
+        ([string]::IsNullOrWhiteSpace($CmbCity.Text))) {
+        $isButtonEnabled = $false
+    }
+
+    # Проверка для Отдела
+    if (($CmbDomain.SelectedItem -eq "parterra") -and
+        ([string]::IsNullOrWhiteSpace($TxtDepartment.Text))) {
+        $isButtonEnabled = $false
+    }   
+
+    # Обновляем состояние кнопки
+    $BtnCreate.Enabled = $isButtonEnabled
+}
+
+# Активация поля ввода Локации сотрудника (при выборе blacklight или fitauto) или поля Отдел (при выборе Партерры)
+$CmbDomain.Add_SelectedIndexChanged({
+    if ($CmbDomain.SelectedItem -eq "blacklight-it" -or $CmbDomain.SelectedItem -eq "fitauto") {
+        # активация элементов формы
+        $Form.Controls.Add($LblCity)
+        $Form.Controls.Add($CmbCity)
+    } else {
+        # Удаление элементов, если выбран другой элемент
+        if ($Form.Controls.Contains($LblCity)) {
+            $Form.Controls.Remove($LblCity)
+        }
+        if ($Form.Controls.Contains($CmbCity)) {
+            $Form.Controls.Remove($CmbCity)
+        }
+    }
+    if ($CmbDomain.SelectedItem -eq "parterra") {
+        # активация элементов формы
+        $Form.Controls.Add($LblDepartment)
+        $Form.Controls.Add($TxtDepartment)
+    } else {
+        # Удаление элементов, если выбран другой элемент
+        if ($Form.Controls.Contains($LblDepartment)) {
+            $Form.Controls.Remove($LblDepartment)
+        }
+        if ($Form.Controls.Contains($TxtDepartment)) {
+            $Form.Controls.Remove($TxtDepartment)
+        }
+    }
+})
+
+# Чтение списка должностей из файла и добавление их в CmbTitle
+function FillCmbTitleFromCSV {
+    param (
+        [System.Windows.Forms.ComboBox]$CmbTitle,
+        [string]$FilePath
+    )
+
+    $ScriptDirectory = $PSScriptRoot
+    if ([string]::IsNullOrEmpty($ScriptDirectory)) {
+        Show-ErrorMessage "Ошибка: не удалось определить каталог текущего скрипта"
+        return
+    }
+
+    if (-not (Test-Path $FilePath)) {
+        $FullFilePath = Join-Path -Path $ScriptDirectory -ChildPath $FilePath
+        if (-not (Test-Path $FullFilePath)) {
+            Show-ErrorMessage "Ошибка: не найден файл со списком должностей. Должен находиться в той же директории, откуда запускашь скрипт"
+            return
+        } else {
+            $FilePath = $FullFilePath
+        }
+    }
+
+    $TitleList = @(Import-Csv -Path $FilePath -Header 'TitleList' -Encoding UTF8)
+    if ($TitleList) {
+        $TitleList.TitleList | ForEach-Object {
+            [void]$CmbTitle.Items.Add($_)
+        }
+        $CmbTitle.SelectedIndex = -1
+    } else {
+        Show-ErrorMessage "Не удалось получить содержимое файла со списком должностей"
+    }
+}
+
+# Функция активации списка подразделений
+function ActivationOrganizationalUnit {
+    # Сбрасываем выбор в OU, локации и должности
+    $CmbOU.SelectedIndex = -1
+    $CmbCity.SelectedIndex = -1
+    $CmbTitle.SelectedIndex = -1
+    # Очищаем существующие элементы в CmbOU и CmbCity
+    $CmbOU.Items.Clear()
+    $CmbCity.Items.Clear() 
+
+    # Проверяем выбранное значение в CmbDomain
+    switch ($CmbDomain.SelectedItem) {
+        "rossko" {
+            # Получаем список городов для rossko.local
+            $OU = @(Get-ADObject `
+                -Server $dc `
+                -Filter { ObjectClass -eq 'organizationalunit' } `
+                -SearchBase $RosskoDomain `
+                -SearchScope OneLevel -Properties Name | `
+                ForEach-Object { $_.Name })
+        }
+        "parterra" {
+            # Получаем список городов для parterra.local
+            $OU = @(Get-ADObject `
+                -Server $dc `
+                -Filter { ObjectClass -eq 'organizationalunit' } `
+                -SearchBase $RosskoDomain `
+                -SearchScope OneLevel -Properties Name | `
+                ForEach-Object { $_.Name })
+        }
+        "blacklight-it" {
+            # Получаем список подразделений для Blacklight
+            $OU = @(Get-ADObject `
+                -Server $dc `
+                -Filter { ObjectClass -eq 'organizationalunit' } `
+                -SearchBase $BlacklightDomain `
+                -SearchScope OneLevel -Properties Name | `
+                ForEach-Object { $_.Name })
+            # Получаем список городов для выбора локации сотрудника
+            $City = @(Get-ADObject `
+                -Server $dc `
+                -Filter { ObjectClass -eq 'organizationalunit' } `
+                -SearchBase $RosskoDomain `
+                -SearchScope OneLevel -Properties Name | `
+                ForEach-Object { $_.Name })
+        }
+        "fitauto" {
+            # Получаем первую OU из fitautoDomain
+            $CurrentOU = Get-ADObject -Server $dc -Filter { DistinguishedName -eq $fitautoDomain } -Properties DistinguishedName
+            # Теперь получаем все OUs внутри первой OU
+            $OU = @(Get-ADObject `
+                -Server $dc `
+                -Filter { ObjectClass -eq 'organizationalunit' } `
+                -SearchBase $CurrentOU.DistinguishedName `
+                -SearchScope Subtree -Properties Name | `
+                ForEach-Object { $_.Name })
+            # Получаем список городов для выбора локации сотрудника
+            $City = @(Get-ADObject `
+                -Server $dc `
+                -Filter { ObjectClass -eq 'organizationalunit' } `
+                -SearchBase $RosskoDomain `
+                -SearchScope OneLevel -Properties Name | `
+                ForEach-Object { $_.Name })
+        }
+        Default {
+            # Если выбрано другое значение, не делаем ничего
+            return
+        }
+    }
+
+    # Заполняем CmbOU и CmbCity новыми значениями, проверяя на null
+    $OU | Where-Object { $_ -ne $null } | ForEach-Object { [void] $CmbOU.Items.Add($_) }
+    $City | Where-Object { $_ -ne $null } | ForEach-Object { [void] $CmbCity.Items.Add($_) }
+}
+
+# Обновляем текст чекбокса в зависимости от выбранного домена
+function UpdateCkbEmail {
+    if ($null -ne $CmbDomain.SelectedItem) {
+        $Domain = $CmbDomain.SelectedItem
+        $LblOU.Text = "OU в AD для $Domain"
+
+        # обновляем домен почты, если меняется выбор домена
+        AutoFillEmail
+    }
+}
+
+# Функция заполняет поле почты, если CkbEmail выбран
+function AutoFillEmail {
+    if ($CkbEmail.Checked) {
+        $Login = $TxtLogin.Text
+        $Domain = $CmbDomain.SelectedItem + ".ru"
+        $EmailAddress = "$Login@$Domain"
+        $TxtMail.Text = $EmailAddress
+    } else {
+        $TxtMail.Text = ""
+    }
+}
+
+# Функция генерации полного имени
+function FullName {
+    $LastName = $TxtLastName.Text
+    $FirstName = $TxtFirstName.Text
+    $MiddleName = $TxtMiddleName.Text
+
+    # Проверяем, что строки не пустые и приводим первую букву к верхнему регистру
+    if (![string]::IsNullOrEmpty($LastName)) {
+        $LastName = $LastName.Substring(0,1).ToUpper() + $LastName.Substring(1).ToLower()
+    }
+    if (![string]::IsNullOrEmpty($FirstName)) {
+        $FirstName = $FirstName.Substring(0,1).ToUpper() + $FirstName.Substring(1).ToLower()
+    }
+    if (![string]::IsNullOrEmpty($MiddleName)) {
+        $MiddleName = $MiddleName.Substring(0,1).ToUpper() + $MiddleName.Substring(1).ToLower()
+    }
+    $FullName = "$LastName $FirstName $MiddleName"
+    $TxtFullName.Text = $FullName
+}
+
+# Функция для добавления сообщений в ListBox
+function Add-VerboseOutput {
+    param (
+        [string]$message
+    )
+    $lstVerboseOutput.AppendText($message)
+}
+
+# Функция отображения ошибок
+function Show-ErrorMessage {
+    param (
+        [string]$ErrorMessage
+    )
+    
+    # Добавляем текст в TextBox с меткой "ОШИБКА!"
+    $lstVerboseOutput.AppendText("ОШИБКА! $ErrorMessage`r`n")
+    
+    # Прокручиваем текст до конца, чтобы пользователь увидел последнее сообщение
+    $lstVerboseOutput.SelectionStart = $lstVerboseOutput.Text.Length
+    $lstVerboseOutput.ScrollToCaret()
+}
+
+# Функция обнаружения некорректного ввода 
+function IncorrectInput {
+    $lstVerboseOutput.Clear()
+
+    function CheckInput($textBox, $fieldName, $pattern, $errorMessage) {
+        if (-not [string]::IsNullOrWhiteSpace($textBox.Text)) {
+            if ($textBox.Text -match $pattern) {
+                $textBox.ForeColor = [System.Drawing.Color]::Red
+                $lstVerboseOutput.AppendText("Поле $fieldName содержит $errorMessage")
+            } else {
+                $textBox.ForeColor = [System.Drawing.SystemColors]::WindowText
+            }
+        } else {
+            $textBox.ForeColor = [System.Drawing.SystemColors]::WindowText
+        }
+    }
+
+    # Разрешены только русские буквы
+    CheckInput $TxtFirstName "'Имя'" "[^а-яА-Я]" "неразрешённые символы (можно только русские буквы)`r`n"
+    CheckInput $TxtLastName "'Фамилия'" "[^а-яА-Я]" "неразрешённые символы (можно только русские буквы)`r`n"
+    CheckInput $TxtMiddleName "'Отчество'" "[^а-яА-ЯЁ]" "неразрешённые символы (можно только русские буквы)`r`n"
+    CheckInput $TxtDepartment "'Отдел'" "[^а-яА-ЯЁ ]" "неразрешённые символы (можно только русские буквы)`r`n"
+
+    # Разрешены только английские буквы и точка
+    CheckInput $TxtLogin "'Логин'" "[^a-zA-Z.]" "неразрешённые символы (можно только английские буквы)`r`n"
+
+    # Разрешены только цифры
+    CheckInput $TxtPhone "'Номер телефона'" "[^\d]" "нецифровые символы (можно только цифры)`r`n"
+    CheckInput $TxtTicket "'Номер заявки'" "[^\d]" "нецифровые символы (можно только цифры)`r`n"
+}
+
+# Функция конвертации логина
+function ConvertNameToADSamAccountName {
+    param([string]$FullName)
+    function TranslitToLAT {
+        param([string]$inString)
+        
+        $Translit_To_LAT = @{
+            [char]'а' = "a"
+            [char]'А' = "a"
+            [char]'б' = "b"
+            [char]'Б' = "b"
+            [char]'в' = "v"
+            [char]'В' = "v"
+            [char]'г' = "g"
+            [char]'Г' = "g"
+            [char]'д' = "d"
+            [char]'Д' = "d"
+            [char]'е' = "e"
+            [char]'Е' = "e"
+            [char]'ё' = "e"
+            [char]'Ё' = "e"
+            [char]'ж' = "zh"
+            [char]'Ж' = "zh"
+            [char]'з' = "z"
+            [char]'З' = "z"
+            [char]'и' = "i"
+            [char]'И' = "i"
+            [char]'й' = "y"
+            [char]'Й' = "y"
+            [char]'к' = "k"
+            [char]'К' = "k"
+            [char]'л' = "l"
+            [char]'Л' = "l"
+            [char]'м' = "m"
+            [char]'М' = "m"
+            [char]'н' = "n"
+            [char]'Н' = "n"
+            [char]'о' = "o"
+            [char]'О' = "o"
+            [char]'п' = "p"
+            [char]'П' = "p"
+            [char]'р' = "r"
+            [char]'Р' = "r"
+            [char]'с' = "s"
+            [char]'С' = "s"
+            [char]'т' = "t"
+            [char]'Т' = "t"
+            [char]'у' = "u"
+            [char]'У' = "u"
+            [char]'ф' = "f"
+            [char]'Ф' = "f"
+            [char]'х' = "h"
+            [char]'Х' = "h"
+            [char]'ц' = "c"
+            [char]'Ц' = "c"
+            [char]'ч' = "ch"
+            [char]'Ч' = "ch"
+            [char]'ш' = "sh"
+            [char]'Ш' = "sh"
+            [char]'щ' = "sch"
+            [char]'Щ' = "sch"
+            [char]'ъ' = ""
+            [char]'Ъ' = ""
+            [char]'ы' = "y"
+            [char]'Ы' = "y"
+            [char]'ь' = ""
+            [char]'Ь' = ""
+            [char]'э' = "e"
+            [char]'Э' = "e"
+            [char]'ю' = "yu"
+            [char]'Ю' = "yu"
+            [char]'я' = "ya"
+            [char]'Я' = "ya"
+            [char]' ' = "_"
+        }
+        
+        $result = ""
+        foreach ($char in $inString.ToCharArray()) {
+            if ($char -cmatch '[a-zA-Zа-яА-ЯёЁ\s]') {
+                $translitChar = $Translit_To_LAT[$char]
+                if ($translitChar) {
+                    $result += $translitChar
+                }
+                else {
+                    $result += $char
+                }
+            }
+        }
+        return $result
+    }
+
+    $LastName = $TxtLastName.Text
+    $FirstName = $TxtFirstName.Text
+    $MiddleName = $TxtMiddleName.Text
+
+    # Проверяем, пустые ли какие-либо из полей с именем
+    if ([string]::IsNullOrWhiteSpace($LastName) -or [string]::IsNullOrWhiteSpace($FirstName) -or [string]::IsNullOrWhiteSpace($MiddleName)) {
+        $TxtLogin.Text = ""
+        return
+    }
+    
+    $LastNameTranslit = TranslitToLAT $LastName
+    $FirstNameTranslit = TranslitToLAT $FirstName
+    $MiddleNameTranslit = TranslitToLAT $MiddleName
+    
+    # Проверяем, что имя и отчество содержат хотя бы по одному символу
+    if ($FirstNameTranslit.Length -lt 1 -or $MiddleNameTranslit.Length -lt 1) {
+        $TxtLogin.Text = ""
+        return
+    }
+
+    $sAMAccountName = ($LastNameTranslit.ToLower() + "." + $FirstNameTranslit.Substring(0,1).ToLower() + "." + $MiddleNameTranslit.Substring(0,1).ToLower())
+    $TxtLogin.Text = $sAMAccountName
+}
+
+# Функция генерации пароля
+function Get-RandomPassword {
+    param (
+        [Parameter(Mandatory)]
+        [ValidateRange(4,[int]::MaxValue)]
+        [int] $length,
+        [int] $upper = 1,
+        [int] $lower = 1,
+        [int] $numeric = 1,
+        [int] $special = 1
+    )
+    if($upper + $lower + $numeric + $special -gt $length) {
+        throw "number of upper/lower/numeric/special char must be lower or equal to length"
+    }
+    $uCharSet = "ABCDEFGHJKLMNOPQRSTUVWXYZ"
+    $lCharSet = "abcdefghijkmnopqrstuvwxyz"
+    $nCharSet = "0123456789"
+    $sCharSet = "*-+?=()@_"
+    $charSet = ""
+    if($upper -gt 0) { $charSet += $uCharSet }
+    if($lower -gt 0) { $charSet += $lCharSet }
+    if($numeric -gt 0) { $charSet += $nCharSet }
+    if($special -gt 0) { $charSet += $sCharSet }
+    
+    $charSet = $charSet.ToCharArray()
+    $rng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
+    $bytes = New-Object byte[]($length)
+    $rng.GetBytes($bytes)
+ 
+    $result = New-Object char[]($length)
+    for ($i = 0 ; $i -lt $length ; $i++) {
+        $result[$i] = $charSet[$bytes[$i] % $charSet.Length]
+    }
+    $password = (-join $result)
+    $valid = $true
+    if($upper   -gt ($password.ToCharArray() | Where-Object {$_ -cin $uCharSet.ToCharArray() }).Count) { $valid = $false }
+    if($lower   -gt ($password.ToCharArray() | Where-Object {$_ -cin $lCharSet.ToCharArray() }).Count) { $valid = $false }
+    if($numeric -gt ($password.ToCharArray() | Where-Object {$_ -cin $nCharSet.ToCharArray() }).Count) { $valid = $false }
+    if($special -gt ($password.ToCharArray() | Where-Object {$_ -cin $sCharSet.ToCharArray() }).Count) { $valid = $false }
+ 
+    if(!$valid) {
+         $password = Get-RandomPassword $length $upper $lower $numeric $special
+    }
+    return $password
+}
+
+# Функция очистки окна вывода
+function ClearVerboseOutput{
+    Try{
+        foreach($Item in $lstVerboseOutput){
+            $lstVerboseOutput.Clear()
+        }
+    }Catch{
+        continue
+    }
+}
+
+# Функция очистки полей формы
+function Clear-Form {
+    $TxtTicket.Text = $Null
+    $TxtLastName.Text = $Null
+    $TxtFirstName.Text = $Null
+    $TxtMiddleName.Text = $Null
+    $TxtDepartment.Text = $Null
+    $TxtFullName.Text = $Null
+    $generatedPassword = $Null
+    $TxtPass.Text = $generatedPassword
+    $TxtMail.Text = $Null
+    $TxtLogin.Text = $Null
+    $TxtPhone.Text = $Null
+    $CmbTitle.Text = $Null
+    $CmbOU.SelectedItem = $Null
+    $CmbCity.SelectedItem = $null
+    $CmbDomain.SelectedItem = $Null
+    $TxtLogin.ReadOnly = $true
+}
+
+# Создаем пользователя в AD
+function Create-NewADUser {
+    param (
+        [string]$OU,
+        [string]$dc,
+        [string]$City,
+        [string]$GivenName,
+        [string]$Surname,
+        [string]$userPrincipalName
+    )
+
+    # Проверяем, заполнено ли поле $TxtPhone.Text
+    if ([string]::IsNullOrWhiteSpace($TxtPhone.Text)) {
+        $phoneNumber = ""
+    } else {
+        $phoneNumber = "+7" + $TxtPhone.Text
+    }
+    # Проверяем, заполнено ли поле $TxtDepartment.Text
+    if ($CmbDomain.SelectedItem -eq "parterra") {
+        $Department = $TxtDepartment.Text
+        $Company = "Партерра"
+    } else {
+        $Department = ""
+        $Company = ""
+    }
+
+    # Создаем нового пользователя
+    try {
+        New-ADUser -Server $dc `
+                   -Path $OU `
+                   -Name $TxtFullName.Text `
+                   -OfficePhone $phoneNumber `
+                   -Title $CmbTitle.Text `
+                   -City $city `
+                   -Department $Department `
+                   -Company $Company `
+                   -DisplayName $TxtFullName.Text `
+                   -GivenName $GivenName `
+                   -Surname $Surname `
+                   -SamAccountName $TxtLogin.Text `
+                   -UserPrincipalName $userPrincipalName `
+                   -Enabled $True `
+                   -Description "Создано: Управление пользователями 3.0" `
+                   -AccountPassword (ConvertTo-SecureString $TxtPass.Text -AsPlainText -Force)
+        #Add-VerboseOutput -message "Попытка создать пользователя '$($TxtFullName.Text)'."
+    } catch {
+        Add-VerboseOutput -message "Ошибка при создании пользователя: $_"
+        return $false
+    }
+
+    # Проверяем, создан ли пользователь
+    $maxWaitTime = 60 # Максимальное время ожидания в секундах
+    $checkInterval = 2 # Интервал проверки в секундах
+    $elapsedTime = 0
+    $userCreated = $false
+
+    while (-not $userCreated -and $elapsedTime -lt $maxWaitTime) {
+        Start-Sleep -Seconds $checkInterval
+                
+        # Проверяем, существует ли пользователь
+        $existingADUser = Get-ADUser -Server $dc -Filter { SamAccountName -eq $TxtLogin.Text } -ErrorAction SilentlyContinue 
+            if ($existingADUser){
+            $userCreated = $true
+            } else {
+                $elapsedTime++
+            }
+        }
+
+    if (-not $userCreated) {
+        Add-VerboseOutput -message "Ошибка: Пользователь '$($TxtFullName.Text)' не был создан в течение 30 секунд."
+    } 
+    return $userCreated
+}
+
+# Функция для добавления пользователя в группы
+function Add-UserToGroups {
+    param (
+        [string]$CityGroup,
+        [string[]]$SelectedGroups,
+        [string]$SamAccountName,
+        [string]$CmbDomainSelectedItem  # добавляем параметр для выбранного домена
+    )
+
+    # Пропускаем добавление в группу города, если выбранный домен blacklight или fitauto
+    if ($CmbDomainSelectedItem -notin @("blacklight-it", "fitauto")) {
+        try {
+            Add-ADGroupMember -Server $dc -Identity $CityGroup -Members $SamAccountName
+        } catch {
+            Add-VerboseOutput -message "Не удалось добавить в группу $CityGroup : $_"
+        }
+    }
+
+    # Проверка добавления в дополнительные группы
+    foreach ($group in $SelectedGroups) {
+        try {
+            Add-ADGroupMember -Server $dc -Identity $group -Members $SamAccountName
+        } catch {
+            Add-VerboseOutput -message "Не удалось добавить в группу $group : $_"
+        }
+    }
+}
+
+# Функция добавления почтового ящика
+function Enable-UserMailbox {
+    param (
+        [string]$SamAccountName,
+        [string]$Domain
+    )
+
+    # Создаем основной SMTP-адрес в зависимости от домена
+    if ($Domain -eq "rossko") {
+        $primarySmtpAddress = $null
+    } elseif ($Domain -in @("parterra", "fitauto", "blacklight-it")) {
+        $primarySmtpAddress = "$SamAccountName@$Domain"+ ".ru"
+    } else {
+        Add-VerboseOutput -message "Неизвестный домен: $Domain"
+        return
+    }
+
+    # Создаем новый сеанс PowerShell
+    $Session = New-PSSession -Name ARMNewUser -ConfigurationName Microsoft.Exchange -ConnectionUri http://exchange-01/PowerShell/ -Authentication Kerberos
+
+    # Импортируем сеанс
+    Import-PSSession $Session -DisableNameChecking
+
+    # Проверяем, создан ли ящик
+    $maxRetries  = 60 # Максимальное время ожидания в секундах
+    $checkInterval = 2 # Интервал проверки в секундах
+    $retryCount = 0
+    $mailboxCreated = $false
+
+    # Включаем почтовый ящик для пользователя с указанным основным SMTP-адресом, если он определен
+    try {
+        if ($primarySmtpAddress) {
+        # Создание почтового ящика
+        Enable-Mailbox -Identity $SamAccountName
+
+        # Ожидание создания почтового ящика
+        do {
+            Start-Sleep -Seconds 2
+            $mailbox = Get-Mailbox -Identity $SamAccountName -ErrorAction SilentlyContinue
+        } while (-not $mailbox)
+
+        # Теперь можно добавлять адреса
+        Set-Mailbox -Identity $SamAccountName -EmailAddresses @{add=$primarySmtpAddress}
+        Set-Mailbox -Identity $SamAccountName -EmailAddressPolicyEnabled $false
+        Set-Mailbox -Identity $SamAccountName -PrimarySmtpAddress $primarySmtpAddress
+        } else {
+            Enable-Mailbox -Identity $SamAccountName
+        }
+
+        # Проверяем создание почтового ящика
+        while (-not $mailboxCreated -and $retryCount -lt $maxRetries) {
+            Start-Sleep -Seconds $checkInterval
+            $existingMailbox = Get-Mailbox -Identity $SamAccountName -ErrorAction SilentlyContinue
+            
+            if ($existingMailbox) {
+                $mailboxCreated = $true
+                #Add-VerboseOutput "Почтовый ящик успешно создан для пользователя: $SamAccountName"
+            } else {
+                $retryCount++
+            }
+        }
+        # Если за время $maxRetries почтовый ящик не создался, выводится сообщение
+        if (-not $mailboxCreated) {
+            Add-VerboseOutput "Не удалось создать почтовый ящик для пользователя: $SamAccountName в течение $maxRetries секунд."
+        } else {
+            # Устанавливаем CustomAttribute1
+            $customAttributeValue = "ROSSKO\$SamAccountName"
+            Set-Mailbox -Identity $SamAccountName -CustomAttribute1 $customAttributeValue
+        }
+    } catch {
+        Add-VerboseOutput "Произошла ошибка при выполнении команд: $_"
+    } finally {
+        # Закрываем сеанс PowerShell
+        Remove-PSSession -Session $Session
+    }
+    
+    return $mailboxCreated  
+}
+
+# Функция для капитализации первой буквы строки
+function CapitalizeFirstLetter {
+    param (
+        [string]$text
+    )
+    if ($text.Length -gt 0) {
+        return $text.Substring(0,1).ToUpper() + $text.Substring(1)
+    }
+    return $text
+}
+
+# Функция для получения выбранных групп из GroupBox
+function Get-SelectedGroups {
+    $selectedGroups = @()
+    foreach ($control in $Panel.Controls) {
+        if ($control -is [System.Windows.Forms.CheckBox] -and $control.Checked) {
+            $selectedGroups += $control.Text
+        }
+    }
+    return $selectedGroups
+}
+
+# Функция для поиска пользователя в AD. Если пользователь есть в AD (проверяем по ФИО, телефону или логину), то будет выведено сообщение
+function Find-ExistingUser {
+    param (
+        [string]$Surname,
+        [string]$GivenName,
+        [string]$MiddleName,
+        [string]$SamAccountName,
+        [string]$dc,
+        [string]$phoneNumber
+    )
+
+    # Извлечение последних 10 цифр из номера телефона
+    function ExtractLast10Digits ($phoneNumber) {
+        $numericDigits = $phoneNumber -replace '\D', ''  # Удалить все нецифровые символы
+        $length = $numericDigits.Length
+        if ($length -ge 10) {
+            return $numericDigits.Substring($length - 10)  # Извлечь последние 10 цифр
+        }
+        return $numericDigits  # Вернуть все цифры, если их меньше 10
+    }
+
+    $result = [PSCustomObject]@{
+        Exists = $false
+        User = $null
+        Message  = ""
+    }
+
+    # 1. Сравнение по логину
+    $existingUserByLogin = Get-ADUser -Filter {SamAccountName -eq $SamAccountName} -Server $dc -ErrorAction SilentlyContinue
+    
+    if ($existingUserByLogin) {
+        $result.Exists = $true
+        $result.User = $existingUserByLogin
+        $result.Message = "Учетная запись с таким логином уже существует:
+        `r`nПолное имя: $($existingUserByLogin.Name)
+        `r`nЛогин: $($existingUserByLogin.SamAccountName)"
+        return $result
+    }
+
+    # 2. Сравнение по номеру телефона (если он введен)
+    if ($phoneNumber) {
+        $inputPhoneLastDigits = $phoneNumber
+        $existingUserByPhone = Get-ADUser -Filter "telephoneNumber -like '*$inputPhoneLastDigits'" -Properties telephoneNumber -Server $dc -ErrorAction SilentlyContinue
+        
+        if ($existingUserByPhone) {
+            $existingPhoneLastDigits = ExtractLast10Digits $existingUserByPhone.telephoneNumber
+            
+            if ($existingPhoneLastDigits -eq $inputPhoneLastDigits) {
+                $result.Exists = $true
+                $result.User = $existingUserByPhone
+                $result.Message = "Учетная запись с таким номером телефона уже существует:
+                `r`nПолное имя: $($existingUserByPhone.Name)
+                `r`nЛогин: $($existingUserByPhone.SamAccountName)
+                `r`nТелефон: $($existingUserByPhone.telephoneNumber)"
+                return $result
+            }
+        }
+    }
+
+    # 3. Сравнение по фамилии и имени
+    $existingUserByName = Get-ADUser -Filter {
+        Surname -eq $Surname -and
+        GivenName -eq $GivenName
+    } -Properties displayName -Server $dc -ErrorAction SilentlyContinue
+    
+    if ($existingUserByName) {
+        # Проверка наличия отчества для нового пользователя в форме
+        if ($MiddleName) {
+            # Проверка наличия отчества в displayName у пользователя в AD
+            $fullNameParts = $existingUserByName.displayName -split '\s+'
+            $existingMiddleName = if ($fullNameParts.Length -ge 3) { $fullNameParts[2] } else { "" }
+
+            if ($existingMiddleName -eq $MiddleName) {
+                $result.Exists = $true
+                $result.User = $existingUserByName
+                $result.Message = "Учетная запись с такими именем, фамилией и отчеством уже существует:
+                `r`nПолное имя: $($existingUserByName.displayName)
+                `r`nЛогин: $($existingUserByName.SamAccountName)"
+                return $result
+            }
+        } else {
+            $result.Message = "Учетная запись с такими именем и фамилией уже существует в AD. Пожалуйста, введите отчество для нового пользователя."
+            return $result
+        }
+    }
+
+    # 4. Проверка телефона, если логин и имя не совпали
+    if ($phoneNumber -and $existingUserByPhone) {
+        $result.Exists = $true
+        $result.User = $existingUserByPhone
+        $result.Message = "Учетная запись с таким номером телефона уже существует, но с другим именем или логином.
+        `r`nПолное имя: $($existingUserByPhone.Name)
+        `r`nЛогин: $($existingUserByPhone.SamAccountName)"
+        return $result
+    }
+    return $result
+}
+
+# Чтение списка должностей из файла и добавление их в ComboBox
+FillCmbTitleFromCSV -CmbTitle $CmbTitle -FilePath $CacheTitle
+
+$BtnCreate.Add_Click({
+    try {
+        switch ($CmbDomain.SelectedItem) {
+            "rossko" {
+               $OU = "OU=" + $CmbOU.Text + "," + $RosskoDomain 
+               $userPrincipalName = $TxtLogin.Text + "@rossko.ru"
+            }
+            "parterra" {
+                $OU = "OU=" + $CmbOU.Text + "," + $RosskoDomain
+                $userPrincipalName = $TxtLogin.Text + "@rossko.ru"
+            }
+            "blacklight-it" {
+                $OU = "OU=" + $CmbOU.Text + "," + $blacklightDomain
+                $userPrincipalName = $TxtLogin.Text + "@rossko.ru"
+            }
+            "fitauto" {
+                $cityName = $CmbOU.Text
+                $OU = Get-ADOrganizationalUnit -Filter "Name -eq '$cityName'" | Select-Object -ExpandProperty DistinguishedName
+                $userPrincipalName = $TxtLogin.Text + "@fitauto.ru"
+            }
+        }
+
+        #$userMailName = $TxtLogin.Text + "@" + $CmbDomain.Text + ".ru"
+        $GivenName = CapitalizeFirstLetter $TxtFirstName.Text
+        $Surname = CapitalizeFirstLetter $TxtLastName.Text
+        $MiddleName = CapitalizeFirstLetter $TxtMiddleName.Text
+        $SelectedGroups = Get-SelectedGroups
+        $Login = $TxtLogin.Text
+        $Pass = $TxtPass.Text
+        $Ticket = $TxtTicket.Text
+
+        # Проверка существования пользователя
+        $searchResult = Find-ExistingUser -Surname $Surname -GivenName $GivenName -MiddleName $MiddleName -phoneNumber $TxtPhone.Text -SamAccountName $TxtLogin.Text -dc $dc
+
+        if ($searchResult.Exists) {
+            Add-VerboseOutput -message ""
+            Add-VerboseOutput -message "$($searchResult.Message)"
+            return
+        }
+
+        # Создание нового пользователя
+        # Если выбран blacklight-it или fitauto, то для них город выбираем из поля локации, для остальных из соответствующего OU
+        if ($CmbDomain.SelectedItem -eq "blacklight-it" -or $CmbDomain.SelectedItem -eq "fitauto") {
+            $City = $CmbCity.Text
+        }else{
+            $City = $CmbOU.Text
+        }
+        Create-NewADUser -OU $OU -dc $dc -City $city -Department $TxtDepartment -GivenName $GivenName -Surname $Surname -userPrincipalName $userPrincipalName
+        $lstVerboseOutput.Clear()
+
+        # Добавляем пользователю группы
+        Add-UserToGroups -CityGroup $CmbOU.Text -SelectedGroups $SelectedGroups -SamAccountName $TxtLogin.Text -CmbDomainSelectedItem $CmbDomain.SelectedItem
+
+        # Добавляем почтовый ящик,если поставлена галка
+        if ($CkbEmail.Checked) {
+        $mailboxCreated =  Enable-UserMailbox -SamAccountName $TxtLogin.Text -Domain $CmbDomain.Text
+        }
+
+        # Отправляем письмо  в заявку о добавлении доступа на ресурсы компании
+        $Body = @"
+Добрый день.<br><br>
+Ваша заявка по предоставлению прав для нового сотрудника $($Surname) $($GivenName) выполнена.<br>
+Для сотрудника создана корпоративная учетная запись.<br>
+Если сотруднику необходимо настроить почтовый клиент Outlook на его устройстве, то необходимо подать отдельную заявку в ServiceDesk.<br>
+Пожалуйста, сообщите эти данные сотруднику.<br>
+Данные для авторизации во внутренних системах компании: логин: $($Login) и пароль: $($Pass)<br>
+Ссылки с инструкциями отправлены на корпоративную почту.<br>
+Для доступа к корпоративной почте необходимо авторизоваться по ссылке <a href='https://webmail.rossko.ru/'>https://webmail.rossko.ru/</a>
+"@
+        Send-MailMessage -SmtpServer "mail.rossko.ru" `
+           -Port 25 `
+           -From "adrossko@rossko.ru" `
+           -To "support@rossko.ru" `
+           -Subject "##$($Ticket)##" `
+           -Body $Body `
+           -BodyAsHtml -Encoding ([System.Text.Encoding]::UTF8)
+
+
+        if ($mailboxCreated) {
+        # Отправляем приветственное письмо на ящик созданного пользователя
+        $BodyNew = @"
+Добро пожаловать в команду!<br><br>
+Для того чтобы получить доступ к внутренним ресурсам компании, находясь вне офиса, нужно обязательно подключить VPN.<br>
+Инструкция по установке и настройке VPN-подключения доступна по <a href='https://disk.yandex.ru/d/WBHJIUEiz3eD1Q'>ссылке</a> в папке с названием вашей операционной системы.<br>
+<b>Важно отметить, что в поле «адрес сервера» нужно вводить vpn.rossko.ru.</b><br>
+Если понадобится расширить права или возникнут какие-нибудь сбои, то на этот случай у нас есть Service Desk. Для подачи заявки есть два способа, они описаны по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=24182972'>ссылке</a><br>
+Инструкция по работе Service Desk расположена по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=66356491'>ссылке</a>.<br>
+Ознакомиться с регламентом по парольной политике можно по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=166166608'>ссылке</a>.<br>
+С инструкциями по информационной безопасности вы можете ознакомиться по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=193768458'>ссылке</a>.<br>
+График работы поддержки и номера телефонов для срочных обращений зафиксированы по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=89489465'>ссылке</a>.<br>
+Если необходимо настроить почтовый клиент Outlook на устройстве, то необходимо подать отдельную заявку в ServiceDesk.<br>
+Общая инструкция по работе в корпоративных системах расположена по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=66362071'>ссылке</a>. Настоятельно рекомендуем ознакомиться с ней!<br>
+Надеемся на долгосрочное и плодотворное сотрудничество!<br><br>
+С уважением, IT-отдел.
+"@
+                Send-MailMessage -SmtpServer "mail.rossko.ru" `
+                    -Port 25 `
+                    -From "adrossko@rossko.ru" `
+                    -To "$userPrincipalName","support@rossko.ru" `
+                    -Subject "Ответ на заявку ##$($Ticket)## Новый пользователь" `
+                    -Body $BodyNew `
+                    -BodyAsHtml -Encoding ([System.Text.Encoding]::UTF8)
+            }else {
+            Add-VerboseOutput -message " Почтовый ящик не был создан."
+            }
+
+        Clear-Form
+        Add-VerboseOutput -message "Учетная запись пользователя $($Surname + " " + $GivenName + " " + $MiddleName) создана.
+Логин: $($Login)
+Пароль: $($Pass)"
+
+
+    }
+    catch 
+    {
+        Show-ErrorMessage -ErrorMessage $_.Exception.Message
+        return
+    }
+})
+
+$BtnClear.Add_Click({
+    try{
+        Clear-Form
+        $lstVerboseOutput.Clear()
+    }
+    catch{
+        Show-ErrorMessage -ErrorMessage $_.Exception.Message
+        return
+    }
+})
+
+$BtnClose.Add_Click({
+    try{
+        $Form.Close()
+    }
+    catch{
+        Show-ErrorMessage -ErrorMessage $_.Exception.Message
+        return
+    }
+})
+
+$BtnUpdatePass.Add_Click({
+    try{
+$generatedPassword = Get-RandomPassword 12
+$TxtPass.Text = $generatedPassword
+    }
+    catch{
+        Show-ErrorMessage -ErrorMessage $_.Exception.Message
+        return
+    }
+})
+
+$Form.ShowDialog()
