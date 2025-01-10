@@ -1,6 +1,8 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+$ScriptVersion = "1.0.0"
+
 # rossko и parterra
 [string] $RosskoDomain = "OU=Rossko.local,DC=rossko,DC=local"
 # Blacklight
@@ -9,6 +11,10 @@ Add-Type -AssemblyName System.Drawing
 [string] $fitautoDomain = "OU=_УК,OU=fitauto.ru_users,DC=rossko,DC=local"
 
 [string] $dc = (Get-ADDomainController -Discover -ForceDiscover -NextClosestSite).hostname
+
+# URL API
+$GitLabApiUrl = "https://gitlab.rossko.ru/api/v4/projects/2148/repository/files/AccountManager3.0.ps1/raw?ref=master"
+$PrivateToken = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("Z2xwYXQtOTFNemU3dDcyYXMyaUY2eHhYNHg="))
 
 $CacheTitle = ".\TitleList.csv"
 $HardcodedDomains = @("rossko", "parterra", "blacklight-it", "fitauto")
@@ -338,7 +344,8 @@ $lblVerboseOutput.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',8
 #$lblVerboseOutput.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
 $Form.Controls.Add($lblVerboseOutput)
 
-$lstVerboseOutput = New-Object System.Windows.Forms.TextBox
+$lstVerboseOutput = New-Object System.Windows.Forms.RichTextBox
+$lstVerboseOutput.Name = "VerboseOutput" # Уникальное имя
 $lstVerboseOutput.Location = New-Object System.Drawing.Size(15, 450)
 $lstVerboseOutput.Size = New-Object System.Drawing.Size(715, 150)
 $lstVerboseOutput.Multiline = $true
@@ -347,6 +354,19 @@ $lstVerboseOutput.ReadOnly = $true
 $lstVerboseOutput.WordWrap = $true
 $lstVerboseOutput.Font = New-Object System.Drawing.Font("Arial",10)
 $lstVerboseOutput.Text = ""
+# Включаем поддержку гиперссылок
+$lstVerboseOutput.DetectUrls = $true
+# Обработка события клика по ссылке
+$lstVerboseOutput.add_LinkClicked({
+    param ($sender, $e)
+    try {
+        # Используем Start-Process для открытия ссылки в браузере
+        Start-Process -FilePath $e.LinkText
+    } catch {
+        Show-ErrorMessage "Не удалось открыть ссылку: $($e.LinkText)"
+        Show-ErrorMessage "Ошибка: $_"
+    }
+})
 $form.Controls.Add($lstVerboseOutput)
 
 $GroupBox = New-Object System.Windows.Forms.GroupBox
@@ -369,6 +389,8 @@ $checkBoxes = @(
     @{ Text = 'VPN'; Checked = $true },
     @{ Text = 'Политика - Автоматическая настройка рабочего места Росско'; Checked = $true },
     @{ Text = 'Пользователи MSTSC Терминальные фермы'; Checked = $true },
+    @{ Text = 'Sales_video'; Checked = $false },
+    @{ Text = 'tf.rossko.ru Excel для OLAP отчётов'; Checked = $false },
     @{ Text = 'tf.rossko.ru 1С. Фронт'; Checked = $false },
     @{ Text = 'tf.rossko.ru 1С. Фронт ОТЧЁТЫ'; Checked = $false },
     @{ Text = 'tf.rossko.ru 1С. ERP'; Checked = $false },
@@ -478,6 +500,20 @@ function EnableCreateButton {
 
     # Обновляем состояние кнопки
     $BtnCreate.Enabled = $isButtonEnabled
+}
+
+# Функция блокировки всех полей формы
+function BlockingAllFields {
+    param (
+        [System.Windows.Forms.Form]$Form,
+        [System.Windows.Forms.Control[]]$ControlsToBlock # Список полей, которые нужно заблокировать
+    )
+
+    foreach ($control in $Form.Controls) {
+        if ($ControlsToBlock -contains $control) {
+            $control.Enabled = $false
+        }
+    }
 }
 
 # Активация поля ввода Локации сотрудника (при выборе blacklight или fitauto) или поля Отдел (при выборе Партерры)
@@ -678,7 +714,7 @@ function Show-ErrorMessage {
     
     # Добавляем текст в TextBox с меткой "ОШИБКА!"
     $lstVerboseOutput.AppendText("ОШИБКА! $ErrorMessage`r`n")
-    
+
     # Прокручиваем текст до конца, чтобы пользователь увидел последнее сообщение
     $lstVerboseOutput.SelectionStart = $lstVerboseOutput.Text.Length
     $lstVerboseOutput.ScrollToCaret()
@@ -696,6 +732,12 @@ function IncorrectInput {
             } else {
                 $textBox.ForeColor = [System.Drawing.SystemColors]::WindowText
             }
+
+            # Дополнительная проверка для номера телефона
+            if ($fieldName -eq "'Номер телефона'" -and ($textBox.Text -replace '[^\d]', '').Length -lt 10) {
+                $textBox.ForeColor = [System.Drawing.Color]::Red
+                $lstVerboseOutput.AppendText("Поле 'Номер телефона' должно содержать не менее 10 цифр`r`n")
+            }
         } else {
             $textBox.ForeColor = [System.Drawing.SystemColors]::WindowText
         }
@@ -710,8 +752,10 @@ function IncorrectInput {
     # Разрешены только английские буквы и точка
     CheckInput $TxtLogin "'Логин'" "[^a-zA-Z.]" "неразрешённые символы (можно только английские буквы)`r`n"
 
-    # Разрешены только цифры
+    # Разрешены только цифры для номера телефона
     CheckInput $TxtPhone "'Номер телефона'" "[^\d]" "нецифровые символы (можно только цифры)`r`n"
+
+    # Проверка на количество цифр в номере телефона теперь внутри CheckInput
     CheckInput $TxtTicket "'Номер заявки'" "[^\d]" "нецифровые символы (можно только цифры)`r`n"
 }
 
@@ -793,14 +837,9 @@ function ConvertNameToADSamAccountName {
         
         $result = ""
         foreach ($char in $inString.ToCharArray()) {
-            if ($char -cmatch '[a-zA-Zа-яА-ЯёЁ\s]') {
-                $translitChar = $Translit_To_LAT[$char]
-                if ($translitChar) {
-                    $result += $translitChar
-                }
-                else {
-                    $result += $char
-                }
+            $translitChar = $Translit_To_LAT[$char]
+            if ($translitChar -ne $null) {
+                $result += $translitChar
             }
         }
         return $result
@@ -990,13 +1029,12 @@ function Add-UserToGroups {
         [string]$CmbDomainSelectedItem  # добавляем параметр для выбранного домена
     )
 
-    # Пропускаем добавление в группу города, если выбранный домен blacklight или fitauto
-    if ($CmbDomainSelectedItem -notin @("blacklight-it", "fitauto")) {
-        try {
-            Add-ADGroupMember -Server $dc -Identity $CityGroup -Members $SamAccountName
-        } catch {
-            Add-VerboseOutput -message "Не удалось добавить в группу $CityGroup : $_"
-        }
+    # добавление в группу города
+    try {
+        Add-ADGroupMember -Server $dc -Identity $CityGroup -Members $SamAccountName
+
+    } catch {
+        Add-VerboseOutput -message "Не удалось добавить в группу $CityGroup : $_"
     }
 
     # Проверка добавления в дополнительные группы
@@ -1111,6 +1149,159 @@ function Get-SelectedGroups {
 }
 
 # Функция для поиска пользователя в AD. Если пользователь есть в AD (проверяем по ФИО, телефону или логину), то будет выведено сообщение
+# function Find-ExistingUser {
+#     param (
+#         [string]$Surname,
+#         [string]$GivenName,
+#         [string]$MiddleName,
+#         [string]$SamAccountName,
+#         [string]$dc,
+#         [string]$phoneNumber,
+#         [string]$SelectedCity
+#     )
+
+#     # Извлечение последних 10 цифр из номера телефона
+#     function ExtractLast10Digits ($phoneNumber) {
+#         $numericDigits = $phoneNumber -replace '\D', ''  # Удалить все нецифровые символы
+#         $length = $numericDigits.Length
+#         if ($length -ge 10) {
+#             return $numericDigits.Substring($length - 10)  # Извлечь последние 10 цифр
+#         }
+#         return $numericDigits  # Вернуть все цифры, если их меньше 10
+#     }
+
+#     $result = [PSCustomObject]@{
+#         Exists = $false
+#         User = $null
+#         Message  = ""
+#     }
+
+#     # 1. Сравнение по логину
+#     $existingUserByLogin = Get-ADUser -Filter {SamAccountName -eq $SamAccountName} -Server $dc -ErrorAction SilentlyContinue
+    
+#     if ($existingUserByLogin) {
+#         $result.Exists = $true
+#         $result.User = $existingUserByLogin
+#         $result.Message = "Учетная запись с таким логином уже существует:
+#         `r`nПолное имя: $($existingUserByLogin.Name)
+#         `r`nЛогин: $($existingUserByLogin.SamAccountName)"
+#         return $result
+#     }
+
+#     # 2. Сравнение по номеру телефона (если он введен)
+#     if ($phoneNumber) {
+#         $inputPhoneLastDigits = $phoneNumber
+#         $existingUserByPhone = Get-ADUser -Filter "telephoneNumber -like '*$inputPhoneLastDigits'" -Properties telephoneNumber -Server $dc -ErrorAction SilentlyContinue
+        
+#         if ($existingUserByPhone) {
+#             $existingPhoneLastDigits = ExtractLast10Digits $existingUserByPhone.telephoneNumber
+            
+#             if ($existingPhoneLastDigits -eq $inputPhoneLastDigits) {
+#                 $result.Exists = $true
+#                 $result.User = $existingUserByPhone
+#                 $result.Message = "Учетная запись с таким номером телефона уже существует:
+#                 `r`nПолное имя: $($existingUserByPhone.Name)
+#                 `r`nЛогин: $($existingUserByPhone.SamAccountName)
+#                 `r`nТелефон: $($existingUserByPhone.telephoneNumber)"
+#                 return $result
+#             }
+#         }
+#     }
+
+#     # 3. Сравнение по фамилии и имени
+#     $existingUserByName = Get-ADUser -Filter {
+#         Surname -eq $Surname -and
+#         GivenName -eq $GivenName
+#     } -Properties displayName -Server $dc -ErrorAction SilentlyContinue
+    
+#     if ($existingUserByName) { # если внесенные в форму фамилия и имя совпаают с учеткой в AD
+#         # Проверка наличия отчества для нового пользователя в форме
+#         if ($MiddleName) {
+#             $MiddleName = $MiddleName.Trim()
+#             # Проверка наличия отчества в displayName у пользователя в AD
+#             $fullNameParts = $existingUserByName.displayName -split '\s+'
+#             $existingMiddleName = if ($fullNameParts.Length -ge 3) { $fullNameParts[2] } else { "" }
+
+#             if ($existingMiddleName -eq $MiddleName) { # если введенное в форму отчество совпадает с отчеством в AD
+#                 $result.Exists = $true
+#                 $result.User = $existingUserByName
+#                 $result.Message = "Учетная запись с такими именем, фамилией и отчеством уже существует:
+#                 `r`nПолное имя: $($existingUserByName.displayName)
+#                 `r`nЛогин: $($existingUserByName.SamAccountName)"
+#                 return $result
+#             }elseif ($existingMiddleName -eq "") { # если отчество отсутствует в AD
+#                 # проверяем по городу
+#                 # Получение DistinguishedName из объекта пользователя в AD
+#                 $distinguishedName = $existingUserByName.DistinguishedName
+#                 # Извлечение значения "Город" из OU
+#                 $distinguishedName -match 'OU=([^,]+)'
+#                 $cityFromAD = $matches[1]  # Город из DistinguishedName
+                    
+#                 # Сравнение города из AD с городом, введенным в форму
+#                 if ($cityFromAD -eq $SelectedCity) {
+#                     $result.Exists = $false
+#                     $result.User = $existingUserByName
+#                     $result.Message = "Учетная запись с таким именем, фамилией и городом уже существует:
+#                     `r`nПолное имя: $($existingUserByName.displayName)
+#                     `r`nЛогин: $($existingUserByName.SamAccountName)
+#                     `r`nГород: $cityFromAD"
+#                     return $result
+#                 } 
+#             } else {
+#             $result.Message = "Учетная запись с такими именем и фамилией уже существует в AD. Пожалуйста, введите отчество для нового пользователя."
+#             return $result
+#             } 
+#         }
+#     }
+
+#     # 4. Проверка телефона, если логин и имя не совпали
+#     if ($phoneNumber -and $existingUserByPhone) {
+#         $result.Exists = $true
+#         $result.User = $existingUserByPhone
+#         $result.Message = "Учетная запись с таким номером телефона уже существует, но с другим именем или логином.
+#         `r`nПолное имя: $($existingUserByPhone.Name)
+#         `r`nЛогин: $($existingUserByPhone.SamAccountName)"
+#         return $result
+#     }
+
+#     # # 5. Сравниваем город пользователя в AD и город вводимого пользователя, если фамилия и имя совпали
+#     # if ($existingUserByName) {
+#     #     # Получение DistinguishedName из объекта пользователя
+#     #     $distinguishedName = $existingUserByName.DistinguishedName
+        
+#     #     # Извлечение значения "Город" из OU
+#     #     if ($distinguishedName -match 'OU=([^,]+)') {
+#     #         $cityFromAD = $matches[1]  # Город из DistinguishedName
+            
+#     #         # Сравнение города из AD с городом, введенным в форму
+#     #         if ($cityFromAD -eq $SelectedCity) {
+#     #             $result.Exists = $true
+#     #             $result.User = $existingUserByName
+#     #             $result.Message = "Учетная запись с таким именем, фамилией и городом уже существует:
+#     #             `r`nПолное имя: $($existingUserByName.displayName)
+#     #             `r`nЛогин: $($existingUserByName.SamAccountName)
+#     #             `r`nГород: $cityFromAD"
+#     #             return $result
+#     #         } else {
+#     #             $result.Message = "Учетная запись с такими именем и фамилией существует, но город отличается.
+#     #             `r`nПолное имя: $($existingUserByName.displayName)
+#     #             `r`nЛогин: $($existingUserByName.SamAccountName)
+#     #             `r`nГород в AD: $cityFromAD
+#     #             `r`nВыбранный город: $SelectedCity"
+#     #             return $result
+#     #         }
+#     #     } else {
+#     #         $result.Message = "Учетная запись с такими именем и фамилией существует, но город определить не удалось.
+#     #         `r`nПолное имя: $($existingUserByName.displayName)
+#     #         `r`nЛогин: $($existingUserByName.SamAccountName)
+#     #         `r`nDistinguishedName: $distinguishedName"
+#     #         return $result
+#     #     }
+#     # }
+
+#     return $result
+# }
+
 function Find-ExistingUser {
     param (
         [string]$Surname,
@@ -1118,12 +1309,13 @@ function Find-ExistingUser {
         [string]$MiddleName,
         [string]$SamAccountName,
         [string]$dc,
-        [string]$phoneNumber
+        [string]$phoneNumber,
+        [string]$SelectedCity
     )
 
     # Извлечение последних 10 цифр из номера телефона
-    function ExtractLast10Digits ($phoneNumber) {
-        $numericDigits = $phoneNumber -replace '\D', ''  # Удалить все нецифровые символы
+    function ExtractLast10Digits ($phoneNumberWithSongs) {
+        $numericDigits = $phoneNumberWithSongs -replace '\D', ''  # Удалить все нецифровые символы
         $length = $numericDigits.Length
         if ($length -ge 10) {
             return $numericDigits.Substring($length - 10)  # Извлечь последние 10 цифр
@@ -1134,12 +1326,11 @@ function Find-ExistingUser {
     $result = [PSCustomObject]@{
         Exists = $false
         User = $null
-        Message  = ""
+        Message = ""
     }
 
     # 1. Сравнение по логину
     $existingUserByLogin = Get-ADUser -Filter {SamAccountName -eq $SamAccountName} -Server $dc -ErrorAction SilentlyContinue
-    
     if ($existingUserByLogin) {
         $result.Exists = $true
         $result.User = $existingUserByLogin
@@ -1149,14 +1340,51 @@ function Find-ExistingUser {
         return $result
     }
 
-    # 2. Сравнение по номеру телефона (если он введен)
+    # 2. Сравнение по имени и фамилии
+    $existingUserByName = Get-ADUser -Filter {
+        Surname -eq $Surname -and
+        GivenName -eq $GivenName
+    } -Properties displayName, DistinguishedName -Server $dc -ErrorAction SilentlyContinue
+
+    if ($existingUserByName) {
+        $distinguishedName = $existingUserByName.DistinguishedName
+        if ($distinguishedName -match 'OU=([^,]+)') {
+            $cityFromAD = $matches[1]
+            if ($cityFromAD -eq $SelectedCity) {
+                $city_check = $true
+            }
+        }
+
+        if ($MiddleName) {
+            $MiddleName = $MiddleName.Trim()
+            $fullNameParts = $existingUserByName.displayName -split '\s+'
+            $existingMiddleName = if ($fullNameParts.Length -ge 3) { $fullNameParts[2] } else { "" }
+
+            if ($existingMiddleName -eq $MiddleName) {
+                $result.Exists = $true
+                $result.User = $existingUserByName
+                $result.Message = "Учетная запись с такими именем, фамилией и отчеством уже существует:
+                `r`nПолное имя: $($existingUserByName.displayName)
+                `r`nЛогин: $($existingUserByName.SamAccountName)"
+                return $result
+            } elseif (!$existingMiddleName -and $city_check) {
+                $result.Exists = $true
+                $result.User = $existingUserByName
+                $result.Message = "Учетная запись с такими именем, фамилией уже существует в OU $cityFromAD но он заведен без отчества:
+                `r`nПолное имя: $($existingUserByName.displayName)
+                `r`nЛогин: $($existingUserByName.SamAccountName)"
+                return $result
+            }
+        }
+    }
+
+    # 3. Проверка по номеру телефона
     if ($phoneNumber) {
-        $inputPhoneLastDigits = $phoneNumber
+        $inputPhoneLastDigits = ExtractLast10Digits -phoneNumberWithSongs $phoneNumber
         $existingUserByPhone = Get-ADUser -Filter "telephoneNumber -like '*$inputPhoneLastDigits'" -Properties telephoneNumber -Server $dc -ErrorAction SilentlyContinue
-        
+
         if ($existingUserByPhone) {
             $existingPhoneLastDigits = ExtractLast10Digits $existingUserByPhone.telephoneNumber
-            
             if ($existingPhoneLastDigits -eq $inputPhoneLastDigits) {
                 $result.Exists = $true
                 $result.User = $existingUserByPhone
@@ -1168,44 +1396,82 @@ function Find-ExistingUser {
             }
         }
     }
+    return $result
+}
 
-    # 3. Сравнение по фамилии и имени
-    $existingUserByName = Get-ADUser -Filter {
-        Surname -eq $Surname -and
-        GivenName -eq $GivenName
-    } -Properties displayName -Server $dc -ErrorAction SilentlyContinue
-    
-    if ($existingUserByName) {
-        # Проверка наличия отчества для нового пользователя в форме
-        if ($MiddleName) {
-            # Проверка наличия отчества в displayName у пользователя в AD
-            $fullNameParts = $existingUserByName.displayName -split '\s+'
-            $existingMiddleName = if ($fullNameParts.Length -ge 3) { $fullNameParts[2] } else { "" }
-
-            if ($existingMiddleName -eq $MiddleName) {
-                $result.Exists = $true
-                $result.User = $existingUserByName
-                $result.Message = "Учетная запись с такими именем, фамилией и отчеством уже существует:
-                `r`nПолное имя: $($existingUserByName.displayName)
-                `r`nЛогин: $($existingUserByName.SamAccountName)"
-                return $result
+# Получение версии из удаленного скрипта
+function Get-RemoteVersion {
+    try {
+        # Выполняем запрос к API GitLab
+        $Headers = @{ "PRIVATE-TOKEN" = $PrivateToken }
+        $Response = Invoke-WebRequest -Uri $GitLabApiUrl -Headers $Headers
+        
+        if ($Response.StatusCode -eq 200) {
+            # Извлекаем строку версии из содержимого скрипта с использованием регулярного выражения
+            $VersionLine = $Response.Content -match '(?<=\$ScriptVersion\s=\s")[\d\.]+'  # Находит строку вида: $ScriptVersion = "1.0.0"
+            if ($VersionLine) {
+                # Возвращаем найденную версию
+                $Version = $Matches[0]
+                return $Version
+            } else {
+                throw "Не удалось найти версию в удаленном скрипте."
             }
         } else {
-            $result.Message = "Учетная запись с такими именем и фамилией уже существует в AD. Пожалуйста, введите отчество для нового пользователя."
-            return $result
+            throw "Ошибка загрузки скрипта с GitLab: $($Response.StatusDescription)"
         }
+    } catch {
+        Show-ErrorMessage "Ошибка получения удаленной версии: $_"
+        return $null
     }
+}
 
-    # 4. Проверка телефона, если логин и имя не совпали
-    if ($phoneNumber -and $existingUserByPhone) {
-        $result.Exists = $true
-        $result.User = $existingUserByPhone
-        $result.Message = "Учетная запись с таким номером телефона уже существует, но с другим именем или логином.
-        `r`nПолное имя: $($existingUserByPhone.Name)
-        `r`nЛогин: $($existingUserByPhone.SamAccountName)"
-        return $result
+# Функция сравнения запускаемой версии скрипта с удаленной
+function Compare-Version {
+    param (
+        [string]$ScriptVersion,
+        [string]$RemoteVersion
+    )
+
+    # Преобразуем версии в массив чисел
+    $LocalParts = $ScriptVersion  -split '\.' | ForEach-Object { [int]$_ }
+    $RemoteParts = $RemoteVersion -split '\.' | ForEach-Object { [int]$_ }
+
+    # Сравниваем версии
+    for ($i = 0; $i -lt [Math]::Max($LocalParts.Count, $RemoteParts.Count); $i++) {
+        $LocalPart = $LocalParts[$i] -as [int]
+        $RemotePart = $RemoteParts[$i] -as [int]
+        if ($LocalPart -lt $RemotePart) { return -1 }
+        if ($LocalPart -gt $RemotePart) { return 1 }
     }
-    return $result
+    return 0
+}
+
+
+## -ОСНОВНОЙ СКРИПТ- ##
+
+# Получаем удаленную версию скрипта
+$RemoteVersion = Get-RemoteVersion
+if (-not $RemoteVersion) {
+    Show-ErrorMessage "Не удалось получить версию AccountManager. Пожалуйста, скачайте актуальную версию из GitLab."
+    # элементы формы, которые будут заблокированны, если версия скрипта устарела
+    BlockingAllFields -form $Form -ControlsToBlock @( $TxtTicket, $TxtLastName, $TxtFirstName, $TxtMiddleName, $CmbDomain, $TxtMail, $CkbEmail, $TxtLogin, $TxtPhone, $CmbOU, $CmbCity, $TxtDepartment, $CmbTitle, $BtnUpdatePass, $BtnClear)
+
+}
+# Сравниваем запускаемую версию скрипта с удаленной
+$Comparison = Compare-Version -ScriptVersion $ScriptVersion -RemoteVersion $RemoteVersion
+switch ($Comparison) {
+    -1 {
+        Show-ErrorMessage "Доступна новая версия. Текущая работать не будет. Пожалуйста, скачайте актуальную версию по ссылке https://gitlab.rossko.ru/team_privacy_support/accountmanager3.0/-/tree/master"
+        BlockingAllFields -form $Form -ControlsToBlock @( $TxtTicket, $TxtLastName, $TxtFirstName, $TxtMiddleName, $CmbDomain, $TxtMail, $CkbEmail, $TxtLogin, $TxtPhone, $CmbOU, $CmbCity, $TxtDepartment, $CmbTitle, $BtnUpdatePass, $BtnClear)
+    }
+    0 {
+        # Комментарий оставлен для возможности включения уведомления
+        # Show-ErrorMessage "Вы используете последнюю версию скрипта."
+    }
+    1 {
+        Show-ErrorMessage "Ваша версия скрипта более новая, чем в GitLab. Обратитесь к автору)"
+        BlockingAllFields -form $Form -ControlsToBlock @( $TxtTicket, $TxtLastName, $TxtFirstName, $TxtMiddleName, $CmbDomain, $TxtMail, $CkbEmail, $TxtLogin, $TxtPhone, $CmbOU, $CmbCity, $TxtDepartment, $CmbTitle, $BtnUpdatePass, $BtnClear)
+    }
 }
 
 # Чтение списка должностей из файла и добавление их в ComboBox
@@ -1241,9 +1507,14 @@ $BtnCreate.Add_Click({
         $Login = $TxtLogin.Text
         $Pass = $TxtPass.Text
         $Ticket = $TxtTicket.Text
+        if ($CmbDomain.SelectedItem -eq "blacklight-it" -or $CmbDomain.SelectedItem -eq "fitauto") {
+            $City = $CmbCity.Text
+        }else{
+            $City = $CmbOU.Text
+        }
 
         # Проверка существования пользователя
-        $searchResult = Find-ExistingUser -Surname $Surname -GivenName $GivenName -MiddleName $MiddleName -phoneNumber $TxtPhone.Text -SamAccountName $TxtLogin.Text -dc $dc
+        $searchResult = Find-ExistingUser -Surname $Surname -GivenName $GivenName -MiddleName $MiddleName -phoneNumber $TxtPhone.Text -SamAccountName $TxtLogin.Text -dc $dc -SelectedCity $City
 
         if ($searchResult.Exists) {
             Add-VerboseOutput -message ""
@@ -1251,84 +1522,87 @@ $BtnCreate.Add_Click({
             return
         }
 
-        # Создание нового пользователя
-        # Если выбран blacklight-it или fitauto, то для них город выбираем из поля локации, для остальных из соответствующего OU
-        if ($CmbDomain.SelectedItem -eq "blacklight-it" -or $CmbDomain.SelectedItem -eq "fitauto") {
-            $City = $CmbCity.Text
-        }else{
-            $City = $CmbOU.Text
-        }
-        Create-NewADUser -OU $OU -dc $dc -City $city -Department $TxtDepartment -GivenName $GivenName -Surname $Surname -userPrincipalName $userPrincipalName
-        $lstVerboseOutput.Clear()
+#         # Создание нового пользователя
+#         # Если выбран blacklight-it или fitauto, то для них город выбираем из поля локации, для остальных из соответствующего OU
+        # if ($CmbDomain.SelectedItem -eq "blacklight-it" -or $CmbDomain.SelectedItem -eq "fitauto") {
+        #     $City = $CmbCity.Text
+        # }else{
+        #     $City = $CmbOU.Text
+        # }
+#         $userCreated = Create-NewADUser -OU $OU -dc $dc -City $city -Department $TxtDepartment -GivenName $GivenName -Surname $Surname -userPrincipalName $userPrincipalName
+#         $lstVerboseOutput.Clear()
 
-        # Добавляем пользователю группы
-        Add-UserToGroups -CityGroup $CmbOU.Text -SelectedGroups $SelectedGroups -SamAccountName $TxtLogin.Text -CmbDomainSelectedItem $CmbDomain.SelectedItem
+#         # Добавляем пользователю группы
+#         if ($userCreated) {
+#             Add-UserToGroups -CityGroup $City -SelectedGroups $SelectedGroups -SamAccountName $TxtLogin.Text -CmbDomainSelectedItem $CmbDomain.SelectedItem
+#         }else {
+#             Add-VerboseOutput -message "Пользователь не был создан в AD"
+#         }
 
-        # Добавляем почтовый ящик,если поставлена галка
-        if ($CkbEmail.Checked) {
-        $mailboxCreated =  Enable-UserMailbox -SamAccountName $TxtLogin.Text -Domain $CmbDomain.Text
-        }
+#         # Добавляем почтовый ящик,если поставлена галка
+#         if ($CkbEmail.Checked) {
+#         $mailboxCreated =  Enable-UserMailbox -SamAccountName $TxtLogin.Text -Domain $CmbDomain.Text
+#         }
 
-        # Отправляем письмо  в заявку о добавлении доступа на ресурсы компании
-        $Body = @"
-Добрый день.<br><br>
-Ваша заявка по предоставлению прав для нового сотрудника $($Surname) $($GivenName) выполнена.<br>
-Для сотрудника создана корпоративная учетная запись.<br>
-Если сотруднику необходимо настроить почтовый клиент Outlook на его устройстве, то необходимо подать отдельную заявку в ServiceDesk.<br>
-Пожалуйста, сообщите эти данные сотруднику.<br>
-Данные для авторизации во внутренних системах компании: логин: $($Login) и пароль: $($Pass)<br>
-Ссылки с инструкциями отправлены на корпоративную почту.<br>
-Для доступа к корпоративной почте необходимо авторизоваться по ссылке <a href='https://webmail.rossko.ru/'>https://webmail.rossko.ru/</a>
-"@
-        Send-MailMessage -SmtpServer "mail.rossko.ru" `
-           -Port 25 `
-           -From "adrossko@rossko.ru" `
-           -To "support@rossko.ru" `
-           -Subject "##$($Ticket)##" `
-           -Body $Body `
-           -BodyAsHtml -Encoding ([System.Text.Encoding]::UTF8)
+#         # Отправляем письмо  в заявку о добавлении доступа на ресурсы компании
+#         $Body = @"
+# Добрый день.<br><br>
+# Ваша заявка по предоставлению прав для нового сотрудника $($Surname) $($GivenName) выполнена.<br>
+# Для сотрудника создана корпоративная учетная запись.<br>
+# Если сотруднику необходимо настроить почтовый клиент Outlook на его устройстве, то необходимо подать отдельную заявку в ServiceDesk.<br>
+# Пожалуйста, сообщите эти данные сотруднику.<br>
+# Данные для авторизации во внутренних системах компании: логин: $($Login) и пароль: $($Pass)<br>
+# Ссылки с инструкциями отправлены на корпоративную почту.<br>
+# Для доступа к корпоративной почте необходимо авторизоваться по ссылке <a href='https://webmail.rossko.ru/'>https://webmail.rossko.ru/</a>
+# "@
+#         Send-MailMessage -SmtpServer "mail.rossko.ru" `
+#            -Port 25 `
+#            -From "adrossko@rossko.ru" `
+#            -To "support@rossko.ru" `
+#            -Subject "##$($Ticket)##" `
+#            -Body $Body `
+#            -BodyAsHtml -Encoding ([System.Text.Encoding]::UTF8)
 
 
-        if ($mailboxCreated) {
-        # Отправляем приветственное письмо на ящик созданного пользователя
-        $BodyNew = @"
-Добро пожаловать в команду!<br><br>
-Для того чтобы получить доступ к внутренним ресурсам компании, находясь вне офиса, нужно обязательно подключить VPN.<br>
-Инструкция по установке и настройке VPN-подключения доступна по <a href='https://disk.yandex.ru/d/WBHJIUEiz3eD1Q'>ссылке</a> в папке с названием вашей операционной системы.<br>
-<b>Важно отметить, что в поле «адрес сервера» нужно вводить vpn.rossko.ru.</b><br>
-Если понадобится расширить права или возникнут какие-нибудь сбои, то на этот случай у нас есть Service Desk. Для подачи заявки есть два способа, они описаны по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=24182972'>ссылке</a><br>
-Инструкция по работе Service Desk расположена по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=66356491'>ссылке</a>.<br>
-Ознакомиться с регламентом по парольной политике можно по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=166166608'>ссылке</a>.<br>
-С инструкциями по информационной безопасности вы можете ознакомиться по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=193768458'>ссылке</a>.<br>
-График работы поддержки и номера телефонов для срочных обращений зафиксированы по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=89489465'>ссылке</a>.<br>
-Если необходимо настроить почтовый клиент Outlook на устройстве, то необходимо подать отдельную заявку в ServiceDesk.<br>
-Общая инструкция по работе в корпоративных системах расположена по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=66362071'>ссылке</a>. Настоятельно рекомендуем ознакомиться с ней!<br>
-Надеемся на долгосрочное и плодотворное сотрудничество!<br><br>
-С уважением, IT-отдел.
-"@
-                Send-MailMessage -SmtpServer "mail.rossko.ru" `
-                    -Port 25 `
-                    -From "adrossko@rossko.ru" `
-                    -To "$userPrincipalName","support@rossko.ru" `
-                    -Subject "Ответ на заявку ##$($Ticket)## Новый пользователь" `
-                    -Body $BodyNew `
-                    -BodyAsHtml -Encoding ([System.Text.Encoding]::UTF8)
-            }else {
-            Add-VerboseOutput -message " Почтовый ящик не был создан."
-            }
+#         if ($mailboxCreated) {
+#         # Отправляем приветственное письмо на ящик созданного пользователя
+#         $BodyNew = @"
+# Добро пожаловать в команду!<br><br>
+# Для того чтобы получить доступ к внутренним ресурсам компании, находясь вне офиса, нужно обязательно подключить VPN.<br>
+# Инструкция по установке и настройке VPN-подключения доступна по <a href='https://disk.yandex.ru/d/WBHJIUEiz3eD1Q'>ссылке</a> в папке с названием вашей операционной системы.<br>
+# <b>Важно отметить, что в поле «адрес сервера» нужно вводить vpn.rossko.ru.</b><br>
+# Если понадобится расширить права или возникнут какие-нибудь сбои, то на этот случай у нас есть Service Desk. Для подачи заявки есть два способа, они описаны по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=24182972'>ссылке</a><br>
+# Инструкция по работе Service Desk расположена по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=66356491'>ссылке</a>.<br>
+# Ознакомиться с регламентом по парольной политике можно по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=166166608'>ссылке</a>.<br>
+# С инструкциями по информационной безопасности вы можете ознакомиться по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=193768458'>ссылке</a>.<br>
+# График работы поддержки и номера телефонов для срочных обращений зафиксированы по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=89489465'>ссылке</a>.<br>
+# Если необходимо настроить почтовый клиент Outlook на устройстве, то необходимо подать отдельную заявку в ServiceDesk.<br>
+# Общая инструкция по работе в корпоративных системах расположена по <a href='https://wiki.blacklight-it.ru/pages/viewpage.action?pageId=66362071'>ссылке</a>. Настоятельно рекомендуем ознакомиться с ней!<br>
+# Надеемся на долгосрочное и плодотворное сотрудничество!<br><br>
+# С уважением, IT-отдел.
+# "@
+#                 Send-MailMessage -SmtpServer "mail.rossko.ru" `
+#                     -Port 25 `
+#                     -From "adrossko@rossko.ru" `
+#                     -To "$userPrincipalName","support@rossko.ru" `
+#                     -Subject "Ответ на заявку ##$($Ticket)## Новый пользователь" `
+#                     -Body $BodyNew `
+#                     -BodyAsHtml -Encoding ([System.Text.Encoding]::UTF8)
+#             }else {
+#             Add-VerboseOutput -message " Почтовый ящик не был создан."
+#             }
 
-        Clear-Form
+        #Clear-Form
         Add-VerboseOutput -message "Учетная запись пользователя $($Surname + " " + $GivenName + " " + $MiddleName) создана.
 Логин: $($Login)
 Пароль: $($Pass)"
 
-
-    }
-    catch 
-    {
-        Show-ErrorMessage -ErrorMessage $_.Exception.Message
-        return
-    }
+     }
+     catch 
+     {
+         Show-ErrorMessage -ErrorMessage $_.Exception.Message
+         return
+     }
 })
 
 $BtnClear.Add_Click({
